@@ -1,0 +1,794 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "0d53f8f5-b5fd-41a3-aeb9-714268f5399b",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Requirement already satisfied: geopandas==0.11.1 in /opt/conda/lib/python3.10/site-packages (0.11.1)\n",
+      "Requirement already satisfied: fiona>=1.8 in /opt/conda/lib/python3.10/site-packages (from geopandas==0.11.1) (1.9.2)\n",
+      "Requirement already satisfied: pyproj>=2.6.1.post1 in /opt/conda/lib/python3.10/site-packages (from geopandas==0.11.1) (3.5.0)\n",
+      "Requirement already satisfied: pandas>=1.0.0 in /opt/conda/lib/python3.10/site-packages (from geopandas==0.11.1) (1.5.3)\n",
+      "Requirement already satisfied: shapely<2,>=1.7 in /opt/conda/lib/python3.10/site-packages (from geopandas==0.11.1) (1.8.5.post1)\n",
+      "Requirement already satisfied: packaging in /opt/conda/lib/python3.10/site-packages (from geopandas==0.11.1) (23.0)\n",
+      "Requirement already satisfied: munch>=2.3.2 in /opt/conda/lib/python3.10/site-packages (from fiona>=1.8->geopandas==0.11.1) (2.5.0)\n",
+      "Requirement already satisfied: click~=8.0 in /opt/conda/lib/python3.10/site-packages (from fiona>=1.8->geopandas==0.11.1) (8.1.3)\n",
+      "Requirement already satisfied: cligj>=0.5 in /opt/conda/lib/python3.10/site-packages (from fiona>=1.8->geopandas==0.11.1) (0.7.2)\n",
+      "Requirement already satisfied: attrs>=19.2.0 in /opt/conda/lib/python3.10/site-packages (from fiona>=1.8->geopandas==0.11.1) (22.2.0)\n",
+      "Requirement already satisfied: click-plugins>=1.0 in /opt/conda/lib/python3.10/site-packages (from fiona>=1.8->geopandas==0.11.1) (1.1.1)\n",
+      "Requirement already satisfied: certifi in /opt/conda/lib/python3.10/site-packages (from fiona>=1.8->geopandas==0.11.1) (2022.12.7)\n",
+      "Requirement already satisfied: python-dateutil>=2.8.1 in /opt/conda/lib/python3.10/site-packages (from pandas>=1.0.0->geopandas==0.11.1) (2.8.2)\n",
+      "Requirement already satisfied: pytz>=2020.1 in /opt/conda/lib/python3.10/site-packages (from pandas>=1.0.0->geopandas==0.11.1) (2022.7.1)\n",
+      "Requirement already satisfied: numpy>=1.21.0 in /opt/conda/lib/python3.10/site-packages (from pandas>=1.0.0->geopandas==0.11.1) (1.23.5)\n",
+      "Requirement already satisfied: six in /opt/conda/lib/python3.10/site-packages (from munch>=2.3.2->fiona>=1.8->geopandas==0.11.1) (1.16.0)\n",
+      "Requirement already satisfied: rtree in /opt/conda/lib/python3.10/site-packages (1.0.1)\n",
+      "Collecting pygeos\n",
+      "  Using cached pygeos-0.14-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.2 MB)\n",
+      "Requirement already satisfied: numpy>=1.13 in /opt/conda/lib/python3.10/site-packages (from pygeos) (1.23.5)\n",
+      "Installing collected packages: pygeos\n",
+      "Successfully installed pygeos-0.14\n"
+     ]
+    }
+   ],
+   "source": [
+    "!pip install geopandas==0.11.1 \n",
+    "!pip install rtree\n",
+    "!pip install pygeos\n",
+    "import rtree\n",
+    "import pygeos\n",
+    "import pandas as pd\n",
+    "import os.path\n",
+    "from os import path\n",
+    "import warnings\n",
+    "import geopandas as gpd\n",
+    "gpd.options.use_pygeos = False\n",
+    "warnings.filterwarnings(\"ignore\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "c0822ac5-3cf7-4a19-ae83-c683fa3be5f7",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def getCountryComparison(pathA, pathB, country, adm_level, comp_source): #path a is salb, path b is other\n",
+    "    truth = gpd.read_file(pathA).to_crs(\"EPSG:3857\")\n",
+    "    contrast = gpd.read_file(pathB).to_crs(\"EPSG:3857\")\n",
+    "    accuracyDF = pd.DataFrame(columns = ['comp_index', 'salb_index', 'overlap_percent', 'adm_level', 'comp_source'])\n",
+    "    for i in range(0,len(contrast)):\n",
+    "        stored_perc = 0\n",
+    "        tempDF = pd.DataFrame(columns = ['comp_index', 'salb_index', 'overlap_percent'])\n",
+    "        feature = contrast.iloc[[i]]\n",
+    "        for y in range(0,len(truth)):\n",
+    "            compFeature = truth.iloc[[y]]\n",
+    "            intersectDF = gpd.overlay(compFeature,feature, how = 'intersection')\n",
+    "            if len(intersectDF) > 0:\n",
+    "                intersect_area = intersectDF.iloc[[0]].area.values[0]         \n",
+    "                overlap_perc = (intersect_area/(feature.area.values[0] + compFeature.area.values[0] - intersect_area))*100\n",
+    "                if overlap_perc > stored_perc:\n",
+    "                    stored_perc = overlap_perc\n",
+    "                    gBindex = i\n",
+    "                    salbindex = y\n",
+    "        new_row = pd.Series({'comp_index': gBindex, 'salb_index': salbindex, 'overlap_percent' : stored_perc, 'adm_level': adm_level, 'comp_source' : comp_source})\n",
+    "        accuracyDF = pd.concat([accuracyDF, new_row.to_frame().T], ignore_index=True)\n",
+    "        accuracyDF.to_csv('processed1/'+comp_source+'/'+country+'_'+adm_level+'.csv')\n",
+    "    return accuracyDF          "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "7e885e8b-f71d-4941-9926-2f595b3db213",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def getCountryComparison_Esri0(pathA, pathB, country, adm_level, comp_source): #path a is salb, path b is other\n",
+    "    truth = gpd.read_file(pathA).to_crs(\"EPSG:3857\")\n",
+    "    contrast = gpd.read_file(pathB).to_crs(\"EPSG:3857\").dissolve()\n",
+    "    accuracyDF = pd.DataFrame(columns = ['comp_index', 'salb_index', 'overlap_percent', 'adm_level', 'comp_source'])\n",
+    "    for i in range(0,len(contrast)):\n",
+    "        stored_perc = 0\n",
+    "        tempDF = pd.DataFrame(columns = ['comp_index', 'salb_index', 'overlap_percent'])\n",
+    "        feature = contrast.iloc[[i]]\n",
+    "        for y in range(0,len(truth)):\n",
+    "            compFeature = truth.iloc[[y]]\n",
+    "            intersectDF = gpd.overlay(compFeature,feature, how = 'intersection')\n",
+    "            if len(intersectDF) > 0:\n",
+    "                intersect_area = intersectDF.iloc[[0]].area.values[0]         \n",
+    "                overlap_perc = (intersect_area/(feature.area.values[0] + compFeature.area.values[0] - intersect_area))*100\n",
+    "                if overlap_perc > stored_perc:\n",
+    "                    stored_perc = overlap_perc\n",
+    "                    gBindex = i\n",
+    "                    salbindex = y\n",
+    "        new_row = pd.Series({'comp_index': gBindex, 'salb_index': salbindex, 'overlap_percent' : stored_perc, 'adm_level': adm_level, 'comp_source' : comp_source})\n",
+    "        accuracyDF = pd.concat([accuracyDF, new_row.to_frame().T], ignore_index=True)\n",
+    "        accuracyDF.to_csv('processed1/'+comp_source+'/'+country+'_'+adm_level+'.csv')\n",
+    "    return accuracyDF          \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "f9fad828-0f4e-4d76-9d37-aa3d9c84ead4",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def getCountryComparison_Esri1(pathA, pathB, country, adm_level, comp_source): #path a is salb, path b is other\n",
+    "    truth = gpd.read_file(pathA).to_crs(\"EPSG:3857\")\n",
+    "    contrast = gpd.read_file(pathB).to_crs(\"EPSG:3857\")\n",
+    "    if 'NAME' in contrast.columns.tolist():\n",
+    "        contrast = contrast.dissolve(by = 'NAME')\n",
+    "    else:\n",
+    "        contrast = contrast.dissolve(by = 'Name')\n",
+    "    accuracyDF = pd.DataFrame(columns = ['comp_index', 'salb_index', 'overlap_percent', 'adm_level', 'comp_source'])\n",
+    "    for i in range(0,len(contrast)):\n",
+    "        stored_perc = 0\n",
+    "        tempDF = pd.DataFrame(columns = ['comp_index', 'salb_index', 'overlap_percent'])\n",
+    "        feature = contrast.iloc[[i]]\n",
+    "        for y in range(0,len(truth)):\n",
+    "            compFeature = truth.iloc[[y]]\n",
+    "            intersectDF = gpd.overlay(compFeature,feature, how = 'intersection')\n",
+    "            if len(intersectDF) > 0:\n",
+    "                intersect_area = intersectDF.iloc[[0]].area.values[0]         \n",
+    "                overlap_perc = (intersect_area/(feature.area.values[0] + compFeature.area.values[0] - intersect_area))*100\n",
+    "                if overlap_perc > stored_perc:\n",
+    "                    stored_perc = overlap_perc\n",
+    "                    gBindex = i\n",
+    "                    salbindex = y\n",
+    "        new_row = pd.Series({'comp_index': gBindex, 'salb_index': salbindex, 'overlap_percent' : stored_perc, 'adm_level': adm_level, 'comp_source' : comp_source})\n",
+    "        accuracyDF = pd.concat([accuracyDF, new_row.to_frame().T], ignore_index=True)\n",
+    "        accuracyDF.to_csv('processed1/'+comp_source+'/'+country+'_'+adm_level+'.csv')\n",
+    "    return accuracyDF          "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "755bfb03-d62a-4ee0-aa35-6112343cd2b6",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def getCountryAverage(country, adm_levels, comp_source):\n",
+    "    country_avgs = pd.DataFrame(columns = ['country', 'level', 'avg_overlap_percent', 'comp_source'])\n",
+    "    adms_avg = []\n",
+    "    adms_len = []\n",
+    "    for level in adm_levels:\n",
+    "        if path.exists('processed1/'+comp_source+'/'+country+'_'+level+'.csv'):\n",
+    "            data = pd.read_csv('processed1/'+comp_source+'/'+country+'_'+level+'.csv')\n",
+    "            adm_avg = data['overlap_percent'].mean()\n",
+    "            adm_len = len(data)\n",
+    "            adms_avg.append(adm_avg)\n",
+    "            adms_len.append(adm_len)\n",
+    "            new_row = pd.Series({'country': country, 'level': level, 'avg_overlap_percent' : adm_avg, 'comp_source' : comp_source})\n",
+    "            country_avgs = pd.concat([country_avgs, new_row.to_frame().T], ignore_index=True)\n",
+    "    n = sum(adms_len)\n",
+    "    adms_avg_weighted = []\n",
+    "    for i in range(0, len(adms_avg)):\n",
+    "        avg = adms_avg[i]\n",
+    "        n1 = adms_len[i]\n",
+    "        weighted = avg*(n1/n)\n",
+    "        adms_avg_weighted.append(weighted)\n",
+    "    all_avg = sum(adms_avg_weighted)\n",
+    "    new_row = pd.Series({'country': country, 'level': 'all', 'avg_overlap_percent' : all_avg, 'comp_source' : comp_source})\n",
+    "    country_avgs = pd.concat([country_avgs, new_row.to_frame().T], ignore_index=True)\n",
+    "    country_avgs.to_csv('processed1/'+comp_source+'/'+country+'_all.csv')\n",
+    "    return country_avgs"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "d8f3b4ac-a23d-429d-a9c6-52a2b2bb937f",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "gb_salb_adm1s = ['ben', 'bdi', 'cmr', 'caf', 'cri', 'civ', 'cub', 'cyp', 'ecu', 'swz', 'isl', \n",
+    "                 'lso', 'mdg', 'moz', 'mng', 'moz', 'nzl', 'ner', 'nga', 'sen', 'lka', 'tgo', 'gnb']\n",
+    "for country in gb_salb_adm1s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM1.geojson\"\n",
+    "    gbPath = \"/home/jovyan/Thesis/data/gb/\" + country + '/' + country.upper() + \"_ADM1.geojson\"\n",
+    "    \n",
+    "    getCountryComparison(salbPath, gbPath, country, 'adm1', 'gB')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'gB')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "id": "0fdb100f-f872-4414-8d67-c92acf5c040f",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "isl done\n"
+     ]
+    }
+   ],
+   "source": [
+    "gb_salb_adm0s = ['ben', 'bdi', 'cmr', 'cri', 'civ', 'cub', 'cyp', 'ecu', 'swz', 'gnb', 'isl', 'nzl', 'lso', 'mdg', 'mng', 'moz'] \n",
+    "for country in gb_salb_adm0s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM0.geojson\"\n",
+    "    gbPath = \"/home/jovyan/Thesis/data/gb/\" + country + '/' + country.upper() + \"_ADM0.geojson\"\n",
+    "    getCountryComparison(salbPath, gbPath, country, 'adm0', 'gB')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'gB')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "id": "d0765306-0865-49b7-8e37-d07dc9342640",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for country in ['bdi', 'ben', 'caf', 'can', 'civ', 'cmr', 'cri', 'cub', 'cyp', 'ecu', 'gha', 'gnb', 'isl', 'khm', 'lka', 'lso', 'mdg', 'mng', 'moz', 'ner', 'nga', 'nzl', 'sen', 'swz', 'tgo']:\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'gB')\n",
+    "for country in ['bdi', 'caf', 'civ', 'cmr', 'cub', 'ecu', 'lso', 'mdg', 'moz', 'ner', 'nga', 'sen', 'tgo']:\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'ocha')\n",
+    "for country in ['bdi', 'ben', 'caf', 'civ', 'cmr', 'cri', 'cyp', 'ecu', 'gha', 'gnb', 'lka', 'lso', 'mdg', 'moz', 'ner', 'nga', 'sen', 'tgo']:\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'esri')\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "29b577e4-ea13-474d-a2e9-4f21dd30ac36",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "gb_salb_adm2s = ['ben', 'bdi', 'khm', 'cmr', 'can', 'cri', 'civ', 'cub', 'cyp', 'ecu', 'swz', 'gha', 'gnb', 'isl', 'lso', 'moz', 'ner', 'nga', 'sen', 'lka', 'tgo']\n",
+    "for country in gb_salb_adm2s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM2.geojson\"\n",
+    "    gbPath = \"/home/jovyan/Thesis/data/gb/\" + country + '/' + country.upper() + \"_ADM2.geojson\"\n",
+    "    getCountryComparison(salbPath, gbPath, country, 'adm2', 'gB')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'gB')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "e2295e50-644e-4b76-9286-f1955d5cb3ed",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# averages of all countries in gb\n",
+    "gb_salbs = ['ben', 'bdi', 'caf', 'can', 'civ', 'cmr', 'cri', 'cub', 'cyp', 'ecu', 'gha', 'gnb', 'isl', 'khm', 'lka', 'lso', 'mdg', 'mng', 'moz', 'ner', 'nga', 'nzl', 'sen', 'swz', 'tgo']\n",
+    "all_df = pd.DataFrame(columns = ['country', 'avg_overlap_percent', 'comp_source'])\n",
+    "for country in gb_salbs:\n",
+    "    if path.exists('/home/jovyan/Thesis/processed/gB/' +country + '_all.csv'):\n",
+    "        data = pd.read_csv('/home/jovyan/Thesis/processed/gB/' +country + '_all.csv')\n",
+    "        data = data.loc[data['level'] == 'all']\n",
+    "        data = data.reset_index()\n",
+    "        percent = data._get_value(0, 'avg_overlap_percent')\n",
+    "        new_row = pd.Series({'country': country, 'avg_overlap_percent' : percent, 'comp_source' : 'gB'})\n",
+    "        all_df = pd.concat([all_df, new_row.to_frame().T], ignore_index=True)\n",
+    "percent = all_df['avg_overlap_percent'].mean()\n",
+    "all_df.to_csv('processed1/gB/gB_all.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "56d6d471-5139-48ff-a5c1-33a9bf75c11a",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "sen done\n",
+      "tgo done\n"
+     ]
+    }
+   ],
+   "source": [
+    "ocha_salb_adm2s = ['bdi','cmr', 'caf', 'civ', 'cub', 'ecu', 'lso', 'mdg', 'moz', 'ner', 'nga', 'sen', 'tgo']\n",
+    "for country in ocha_salb_adm2s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM2.geojson\"\n",
+    "    ochaPath = \"/home/jovyan/Thesis/data/ocha/\" + country + '/' + country.upper() + \"_ADM2.geojson\"\n",
+    "    getCountryComparison(salbPath, ochaPath, country, 'adm2', 'ocha')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'ocha')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "f8d526cc-c128-44ae-a42a-261f4316532b",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "bdi done\n",
+      "cmr done\n",
+      "caf done\n",
+      "civ done\n",
+      "cub done\n",
+      "ecu done\n",
+      "lso done\n",
+      "mdg done\n",
+      "moz done\n",
+      "ner done\n",
+      "nga done\n",
+      "sen done\n",
+      "tgo done\n"
+     ]
+    }
+   ],
+   "source": [
+    "ocha_salb_adm1s = ['bdi', 'cmr', 'caf', 'civ', 'cub', 'ecu', 'lso', 'mdg', 'moz', 'ner', 'nga', 'sen', 'tgo']\n",
+    "for country in ocha_salb_adm1s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM1.geojson\"\n",
+    "    ochaPath = \"/home/jovyan/Thesis/data/ocha/\" + country + '/' + country.upper() + \"_ADM1.geojson\"\n",
+    "    getCountryComparison(salbPath, ochaPath, country, 'adm1', 'ocha')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'ocha')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "a19d91d6-3aad-403a-951e-2130a472923c",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "bdi done\n",
+      "cmr done\n",
+      "caf done\n",
+      "civ done\n",
+      "cub done\n",
+      "ecu done\n",
+      "lso done\n",
+      "mdg done\n",
+      "moz done\n",
+      "ner done\n",
+      "nga done\n",
+      "sen done\n",
+      "tgo done\n"
+     ]
+    }
+   ],
+   "source": [
+    "ocha_salb_adm0s =['bdi', 'cmr', 'caf', 'civ', 'cub', 'ecu', 'lso', 'mdg', 'moz', 'ner', 'nga', 'sen', 'tgo']\n",
+    "for country in ocha_salb_adm0s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM0.geojson\"\n",
+    "    ochaPath = \"/home/jovyan/Thesis/data/ocha/\" + country + '/' + country.upper() + \"_ADM0.geojson\"\n",
+    "    getCountryComparison(salbPath, ochaPath, country, 'adm0', 'ocha')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1', 'adm2'], 'ocha')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "id": "ad4becd5-afd5-4862-b711-440e1940a049",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "ocha_salbs = ['ben', 'bdi', 'cmr', 'caf', 'civ', 'cub', 'ecu', 'lso', 'mdg', 'moz', 'ner', 'nga' ,'sen', 'tgo']\n",
+    "all_df = pd.DataFrame(columns = ['country', 'avg_overlap_percent', 'comp_source'])\n",
+    "for country in ocha_salbs:\n",
+    "    if path.exists('/home/jovyan/Thesis/processed/ocha/' +country + '_all.csv'):\n",
+    "        data = pd.read_csv('/home/jovyan/Thesis/processed/ocha/' +country + '_all.csv')\n",
+    "        data = data.loc[data['level'] == 'all']\n",
+    "        data = data.reset_index()\n",
+    "        percent = data._get_value(0, 'avg_overlap_percent')\n",
+    "        new_row = pd.Series({'country': country, 'avg_overlap_percent' : percent, 'comp_source' : 'ocha'})\n",
+    "        all_df = pd.concat([all_df, new_row.to_frame().T], ignore_index=True)\n",
+    "percent = all_df['avg_overlap_percent'].mean()\n",
+    "all_df.to_csv('processed1/ocha/ocha_all.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "id": "30a05176-5870-441e-98dd-0cec515abe9b",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "civ done\n",
+      "lso done\n",
+      "mdg done\n",
+      "moz done\n",
+      "ner done\n"
+     ]
+    }
+   ],
+   "source": [
+    "esri_salb_adm0s = ['civ', 'lso', 'mdg', 'moz', 'ner']\n",
+    "for country in esri_salb_adm0s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM0.geojson\"\n",
+    "    ochaPath = \"/home/jovyan/Thesis/data/esri/\" + country + '/' + country.upper() + \"_ADM0.geojson\"\n",
+    "    getCountryComparison_Esri0(salbPath, ochaPath, country, 'adm0', 'esri')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1'], 'esri')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "id": "c494d49c-f017-46fd-a9ee-7b3bdfde48e3",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "bdi done\n",
+      "['FID', 'Name', 'Country', 'ISO Code', 'ISO Country', 'ISO Admin', 'Admin Type', 'Disputed', 'Notes', 'Autonomous', 'Affiliation', 'Continent', 'Land_Type', 'Land_Rank', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "ben done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "caf done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "civ done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "cmr done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "cri done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "cyp done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "ecu done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "gha done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "gnb done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "lka done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "lso done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "mdg done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "moz done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "ner done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "nga done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "sen done\n",
+      "['FID', 'NAME', 'COUNTRY', 'ISO_CODE', 'ISO_CC', 'ISO_SUB', 'ADMINTYPE', 'DISPUTED', 'NOTES', 'AUTONOMOUS', 'COUNTRYAFF', 'CONTINENT', 'LAND_TYPE', 'LAND_RANK', 'Shape__Area', 'Shape__Length', 'geometry']\n",
+      "tgo done\n"
+     ]
+    }
+   ],
+   "source": [
+    "esri_salb_adm1s = ['bdi', 'ben', 'caf', 'civ', 'cmr', 'cri', 'cyp', 'ecu', 'gha', 'gnb', 'lka', 'lso', 'mdg', 'moz', 'ner', 'nga', 'sen', 'tgo']\n",
+    "for country in esri_salb_adm1s:\n",
+    "    salbPath = \"/home/jovyan/Thesis/data/salb/\" + country + '/' + country.upper() + \"_ADM1.geojson\"\n",
+    "    ochaPath = \"/home/jovyan/Thesis/data/esri/\" + country + '/' + country.upper() + \"_ADM1.geojson\"\n",
+    "    getCountryComparison_Esri1(salbPath, ochaPath, country, 'adm1', 'esri')\n",
+    "    getCountryAverage(country, ['adm0', 'adm1'], 'esri')\n",
+    "    print(country + ' done')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "92a2058e-1c03-47ad-b476-63a4c9440b39",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "esri_salbs = ['bdi', 'ben', 'caf', 'civ', 'cmr', 'cri', 'cyp', 'ecu', 'gha', 'gnb', 'lka', 'lso', 'mdg', 'moz', 'ner', 'nga', 'sen', 'tgo']\n",
+    "all_df = pd.DataFrame(columns = ['country', 'avg_overlap_percent', 'comp_source'])\n",
+    "for country in esri_salbs:\n",
+    "    if path.exists('/home/jovyan/Thesis/processed/esri/' +country + '_all.csv'):\n",
+    "        data = pd.read_csv('/home/jovyan/Thesis/processed/esri/' +country + '_all.csv')\n",
+    "        data = data.loc[data['level'] == 'all']\n",
+    "        data = data.reset_index()\n",
+    "        percent = data._get_value(0, 'avg_overlap_percent')\n",
+    "        new_row = pd.Series({'country': country, 'avg_overlap_percent' : percent, 'comp_source' : 'esri'})\n",
+    "        all_df = pd.concat([all_df, new_row.to_frame().T], ignore_index=True)\n",
+    "percent = all_df['avg_overlap_percent'].mean()\n",
+    "all_df.to_csv('processed1/esri/esri_all.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "c620d618-02e0-4e97-9901-284b58c6c9a6",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "##table manipulation & creation\n",
+    "all_df = pd.DataFrame(columns = ['country', 'level', 'avg_overlap_percent', 'comp_source'])\n",
+    "for folder in ['esri', 'gB', 'ocha']:\n",
+    "    for item in os.listdir(folder):\n",
+    "        if 'all.csv' in item:\n",
+    "            data = pd.read_csv(folder + '/' + item)\n",
+    "            for index in range(len(data)):\n",
+    "                level = data.iloc[index].level\n",
+    "                percent = data.iloc[index].avg_overlap_percent\n",
+    "                country = data.iloc[index].country\n",
+    "                comp_source = data.iloc[index].comp_source\n",
+    "                new_row = pd.Series({'country': country, 'level': level, 'avg_overlap_percent' : percent, 'comp_source' : folder})\n",
+    "                all_df = pd.concat([all_df, new_row.to_frame().T], ignore_index=True)\n",
+    "all_df.to_csv('all_all1.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "86d58e4c-41dd-4f20-ae2b-3748efb09bff",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "data = pd.read_csv('all_all1.csv')\n",
+    "data_pivot = data.pivot_table(index = ['country', 'comp_source'],\n",
+    "                              columns = 'level',\n",
+    "                              values = 'avg_overlap_percent').reset_index()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "848d814a-4bd5-46dd-9146-39be1fb303b5",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "data_pivot_working = data_pivot.copy()\n",
+    "esri_all = data_pivot_working[data_pivot_working['comp_source']=='esri']\n",
+    "gB_all = data_pivot_working[data_pivot_working['comp_source']=='gB']\n",
+    "ocha_all = data_pivot_working[data_pivot_working['comp_source']=='ocha']\n",
+    "data_pivot_working = data_pivot_working.append({'country':'all', 'comp_source':'esri'}, ignore_index = True)\n",
+    "data_pivot_working = data_pivot_working.append({'country':'all', 'comp_source':'gB'}, ignore_index = True)\n",
+    "data_pivot_working = data_pivot_working.append({'country':'all', 'comp_source':'ocha'}, ignore_index = True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "086df02a-2b9f-471b-b6f6-3052837dcede",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#numbers hardcoded in bc my brain is at 60% power #,2 is for col 'adm0'. 58 is for esri all\n",
+    "data_pivot_working.iloc[56,2] = np.mean(esri_all[['adm0']])\n",
+    "data_pivot_working.iloc[56,3] = np.mean(esri_all[['adm1']])\n",
+    "data_pivot_working.iloc[56,4] = np.mean(esri_all[['adm2']])\n",
+    "data_pivot_working.iloc[57,2] = np.mean(gB_all[['adm0']])\n",
+    "data_pivot_working.iloc[57,3] = np.mean(gB_all[['adm1']])\n",
+    "data_pivot_working.iloc[57,4] = np.mean(gB_all[['adm2']])\n",
+    "data_pivot_working.iloc[58,2] = np.mean(ocha_all[['adm0']])\n",
+    "data_pivot_working.iloc[58,3] = np.mean(ocha_all[['adm1']])\n",
+    "data_pivot_working.iloc[58,4] = np.mean(ocha_all[['adm2']])\n",
+    "data_pivot_working.to_csv('master_table.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "4ed4807c-343b-47c8-8383-5115455681fd",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#fixing means to be weighted"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "7015122b-dd03-469a-aa0c-5efe54b10f66",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "data = pd.read_csv('master_table.csv')\n",
+    "data1 = data.copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "288f38ae-1efe-4e86-852d-ebcf70f94869",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#esri adm1s fixing the average\n",
+    "adm1s = esri_all[['country', 'adm1']].dropna()\n",
+    "total_features_esri_adm1 = []\n",
+    "adms_avg_weighted = []\n",
+    "adm1s = adm1s.reset_index()\n",
+    "for i in range(0, len(esri_all[['country', 'adm1']].dropna())-1):\n",
+    "    iso = adm1s.loc[i]['country']\n",
+    "    avg = adm1s.loc[i]['adm1']\n",
+    "    n1 = len(pd.read_csv('esri/'+ iso+ '_adm1.csv'))\n",
+    "    total_features_esri_adm1.append(n1)\n",
+    "n = sum(total_features_esri_adm1)\n",
+    "for i in range(0, len(esri_all[['country', 'adm1']].dropna())-1):\n",
+    "    iso = adm1s.loc[i]['country']\n",
+    "    avg = adm1s.loc[i]['adm1']\n",
+    "    n1 = len(pd.read_csv('esri/' + iso+ '_adm1.csv'))\n",
+    "    weighted = avg*(n1/n)\n",
+    "    adms_avg_weighted.append(weighted)\n",
+    "all_avg = sum(adms_avg_weighted)\n",
+    "data1.iloc[56,4] = all_avg\n",
+    "\n",
+    "#all esri average\n",
+    "total_features_esri = sum(total_features_esri_adm1) + len(esri_all[['country', 'adm1']].dropna())-1\n",
+    "weighted_avg_adm0 = data1.iloc[56,3]*((len(esri_all[['country', 'adm1']].dropna())-1)/total_features_esri)\n",
+    "weighted_avg_adm1 = data1.iloc[56,4]*(sum(total_features_esri_adm1)/total_features_esri)\n",
+    "all_avg = weighted_avg_adm0+weighted_avg_adm1\n",
+    "data1.iloc[56,6] = all_avg"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "702bc058-be19-4b1d-a941-7a563d92825c",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#all esri average\n",
+    "total_features_esri = sum(total_features_esri_adm1) + len(esri_all[['country', 'adm0']].dropna())-1\n",
+    "weighted_avg_adm0 = data1.iloc[56,3]*((len(esri_all[['country', 'adm0']].dropna())-1)/total_features_esri)\n",
+    "weighted_avg_adm1 = data1.iloc[56,4]*(sum(total_features_esri_adm1)/total_features_esri)\n",
+    "all_avg = weighted_avg_adm0+weighted_avg_adm1\n",
+    "data1.iloc[56,6] = all_avg"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "f0a4fa95-dfd5-4905-8652-bb097fcd6d26",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#ocha adm1s fixing the average\n",
+    "adm1s = ocha_all[['country', 'adm1']].dropna()\n",
+    "total_features_ocha_adm1 = []\n",
+    "adms_avg_weighted = []\n",
+    "adm1s = adm1s.reset_index()\n",
+    "for i in range(0, len(ocha_all[['country', 'adm1']].dropna())-1):\n",
+    "    iso = adm1s.loc[i]['country']\n",
+    "    avg = adm1s.loc[i]['adm1']\n",
+    "    n1 = len(pd.read_csv('ocha/'+ iso+ '_adm1.csv'))\n",
+    "    total_features_ocha_adm1.append(n1)\n",
+    "n = sum(total_features_ocha_adm1)\n",
+    "for i in range(0, len(ocha_all[['country', 'adm1']].dropna())-1):\n",
+    "    iso = adm1s.loc[i]['country']\n",
+    "    avg = adm1s.loc[i]['adm1']\n",
+    "    n1 = len(pd.read_csv('ocha/' + iso+ '_adm1.csv'))\n",
+    "    weighted = avg*(n1/n)\n",
+    "    adms_avg_weighted.append(weighted)\n",
+    "    print(avg), print(iso)\n",
+    "all_avg = sum(adms_avg_weighted)\n",
+    "data1.iloc[58,4] = all_avg\n",
+    "\n",
+    "\n",
+    "adm2s = ocha_all[['country', 'adm2']].dropna()\n",
+    "total_features_ocha_adm2 = []\n",
+    "adms_avg_weighted = []\n",
+    "adm2s = adm2s.reset_index()\n",
+    "for i in range(0, len(ocha_all[['country', 'adm2']].dropna())-1):\n",
+    "    iso = adm2s.loc[i]['country']\n",
+    "    avg = adm2s.loc[i]['adm2']\n",
+    "    n1 = len(pd.read_csv('ocha/'+ iso+ '_adm2.csv'))\n",
+    "    total_features_ocha_adm2.append(n1)\n",
+    "n = sum(total_features_ocha_adm2)\n",
+    "for i in range(0, len(ocha_all[['country', 'adm2']].dropna())-1):\n",
+    "    iso = adm2s.loc[i]['country']\n",
+    "    avg = adm2s.loc[i]['adm2']\n",
+    "    n1 = len(pd.read_csv('ocha/' + iso+ '_adm2.csv'))\n",
+    "    weighted = avg*(n1/n)\n",
+    "    adms_avg_weighted.append(weighted)\n",
+    "all_avg = sum(adms_avg_weighted)\n",
+    "data1.iloc[58,5] = all_avg\n",
+    "\n",
+    "#all ocha average\n",
+    "total_features_ocha = sum(total_features_ocha_adm1) + sum(total_features_ocha_adm2) + len(ocha_all[['country', 'adm0']].dropna())-1\n",
+    "weighted_avg_adm0 = data1.iloc[58,3]*((len(ocha_all[['country', 'adm0']].dropna())-1)/total_features_ocha)\n",
+    "weighted_avg_adm1 = data1.iloc[58,4]*(sum(total_features_ocha_adm1)/total_features_ocha)\n",
+    "weighted_avg_adm2 = data1.iloc[58,5]*(sum(total_features_ocha_adm2)/total_features_ocha)\n",
+    "all_avg = weighted_avg_adm0+weighted_avg_adm1+weighted_avg_adm2\n",
+    "data1.iloc[58,6] = all_avg"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "07480a9a-1f0f-4527-a49f-afb97acdd82d",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#gB adm1s fixing the average\n",
+    "adm1s = gB_all[['country', 'adm1']].dropna()\n",
+    "total_features_gB_adm1 = []\n",
+    "adms_avg_weighted = []\n",
+    "adm1s = adm1s.reset_index()\n",
+    "for i in range(0, len(gB_all[['country', 'adm1']].dropna())-1):\n",
+    "    iso = adm1s.loc[i]['country']\n",
+    "    avg = adm1s.loc[i]['adm1']\n",
+    "    n1 = len(pd.read_csv('gB/'+ iso+ '_adm1.csv'))\n",
+    "    total_features_gB_adm1.append(n1)\n",
+    "n = sum(total_features_gB_adm1)\n",
+    "for i in range(0, len(gB_all[['country', 'adm1']].dropna())-1):\n",
+    "    iso = adm1s.loc[i]['country']\n",
+    "    avg = adm1s.loc[i]['adm1']\n",
+    "    n1 = len(pd.read_csv('gB/' + iso+ '_adm1.csv'))\n",
+    "    weighted = avg*(n1/n)\n",
+    "    adms_avg_weighted.append(weighted)\n",
+    "    print(avg), print(iso)\n",
+    "all_avg = sum(adms_avg_weighted)\n",
+    "data1.iloc[57,4] = all_avg\n",
+    "\n",
+    "\n",
+    "adm2s = gB_all[['country', 'adm2']].dropna()\n",
+    "total_features_gB_adm2 = []\n",
+    "adms_avg_weighted = []\n",
+    "adm2s = adm2s.reset_index()\n",
+    "for i in range(0, len(gB_all[['country', 'adm2']].dropna())-1):\n",
+    "    iso = adm2s.loc[i]['country']\n",
+    "    avg = adm2s.loc[i]['adm2']\n",
+    "    n1 = len(pd.read_csv('gB/'+ iso+ '_adm2.csv'))\n",
+    "    total_features_gB_adm2.append(n1)\n",
+    "n = sum(total_features_gB_adm2)\n",
+    "for i in range(0, len(gB_all[['country', 'adm2']].dropna())-1):\n",
+    "    iso = adm2s.loc[i]['country']\n",
+    "    avg = adm2s.loc[i]['adm2']\n",
+    "    n1 = len(pd.read_csv('gB/' + iso+ '_adm2.csv'))\n",
+    "    weighted = avg*(n1/n)\n",
+    "    adms_avg_weighted.append(weighted)\n",
+    "all_avg = sum(adms_avg_weighted)\n",
+    "data1.iloc[57,5] = all_avg\n",
+    "\n",
+    "#all gb average\n",
+    "total_features_gB = sum(total_features_gB_adm1) + sum(total_features_gB_adm2) + len(gB_all[['country', 'adm0']].dropna())-1\n",
+    "weighted_avg_adm0 = data1.iloc[57,3]*((len(gB_all[['country', 'adm0']].dropna())-1)/total_features_gB)\n",
+    "weighted_avg_adm1 = data1.iloc[57,4]*(sum(total_features_gB_adm1)/total_features_gB)\n",
+    "weighted_avg_adm2 = data1.iloc[57,5]*(sum(total_features_gB_adm2)/total_features_gB)\n",
+    "all_avg = weighted_avg_adm0+weighted_avg_adm1+weighted_avg_adm2\n",
+    "data1.iloc[57,6] = all_avg"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "947aaa64-5d4f-47ea-a1fa-b699a1c7e43b",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "data1.to_csv('master_table.csv')"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.9"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
