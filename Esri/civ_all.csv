@@ -1,0 +1,4 @@
+,country,level,avg_overlap_percent,comp_source
+0,civ,adm0,99.54243125298544,esri
+1,civ,adm1,95.90705787014997,esri
+2,civ,all,96.14941609567234,esri
