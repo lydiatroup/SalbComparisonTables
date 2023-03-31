@@ -1,0 +1,5 @@
+,country,level,avg_overlap_percent,comp_source
+0,cub,adm0,98.08089700861618,ocha
+1,cub,adm1,90.01715928353656,ocha
+2,cub,adm2,61.485126679514515,ocha
+3,cub,all,64.15057690650616,ocha
